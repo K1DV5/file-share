@@ -49,7 +49,7 @@
                 progressInterval = setInterval(() => {
                     let current = Number(progressIndic.width.slice(0, -1)) || 0
                     if (current == destination) return clearInterval(progressInterval)
-                    progressIndic.width = (current + Math.round((destination - current)/2)) + '%'
+                    progressIndic.width = (current + (destination - current)/2) + '%'
                 }, 1000)
             }
 

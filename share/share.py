@@ -65,7 +65,7 @@ class handler(BaseHTTPRequestHandler):
             own_files[self.client_address[0]] = set()
         inc = 50 / len(files)
         for i, file in enumerate(files, start=1):
-            self.wfile.write(str(round(50 + i * inc)).encode())  # progress
+            self.wfile.write(str(50 + i * inc).encode())  # progress
             fname = path.join('.', folder, file.filename)
             own_files[self.client_address[0]].update([fname])
             with open(fname, 'wb') as fp:
