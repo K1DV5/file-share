@@ -9,12 +9,14 @@
             html {margin: 2em; font-family: sans-serif; font-size: 90%}
             body {max-width: 10cm; margin-left: auto; margin-right: auto}
             #file {background: transparent; border: solid grey; display: none}
-            label[for=file] {display: block; border: solid grey; padding: .5em; width: fit-content; cursor: pointer}
+            form {display: inline}
+            button, label[for=file] {border: solid grey; padding: .5em; width: fit-content; cursor: pointer; background: transparent}
             .item {padding-top: .5em; padding-bottom: .7em; border-bottom: solid lightgrey 1px; cursor: pointer}
             a {text-decoration: none; color: green; display: block}
-            .own {display: flex; justify-content: space-between}
-            .own > div {color: red; padding-right: .4em; padding-left: .3em; border: solid 1px red}
-            .progress-bg {background: lightgrey; height: 2px; margin-top: .5em; margin-bottom: .5em}
+            .own {padding: 0}
+            .own > a {display: inline-block; width: calc(10cm - 1.5em); padding-top: .5em; padding-bottom: .7em}
+            .own > div {color: red; padding-right: .4em; padding-left: .3em; border: solid 1px red; display: inline}
+            .progress-bg {background: lightgrey; height: 1px; margin-top: 1em}
             .progress {background: blue; width: 0; height: 100%}
         </style>
     </head>
@@ -24,6 +26,7 @@
             <label for="file" id="upload">Upload</label>
             <input id="file" name="file" type="file" multiple>
         </form>
+        <button id="refresh">Refresh</button>
         <div class="progress-bg">
             <div class="progress"></div>
         </div>
@@ -37,9 +40,9 @@
             fileInput.addEventListener('change', upload)
             let progressInterval = false
             let progressIndic = document.getElementsByClassName('progress')[0].style
+            document.getElementById('refresh').addEventListener('click', () => refresh(title.innerText))
 
             function progress(destination) {
-                // upButt.innerText = destination + '%'
                 if (progressInterval) clearTimeout(progressInterval)
                 if (destination == 100) {
                     progressIndic.width = '100%'
@@ -49,7 +52,7 @@
                 progressInterval = setInterval(() => {
                     let current = Number(progressIndic.width.slice(0, -1)) || 0
                     if (current == destination) return clearInterval(progressInterval)
-                    progressIndic.width = (current + (destination - current)/2) + '%'
+                    progressIndic.width = (current + (destination - current)/3) + '%'
                 }, 1000)
             }
 
