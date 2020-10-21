@@ -77,7 +77,7 @@
 
             function refresh(path) {
                 title.innerText = path
-                fetch('/get' + path).then(res => {
+                fetch(path).then(res => {
                     if (res.status == 200) {res.json().then(json => {
                         list.innerText = ''
                         if (path !== '/') {
@@ -102,7 +102,7 @@
                                 getPart.innerText = node.name
                                 delPart.innerHTML = '&times;'
                                 item.className = 'own'
-                                getPart.href = '/get' + path + node.name
+                                getPart.href = path + node.name
                                 delPart.onclick = () => fetch(path + node.name, {method: 'DELETE'}).then(() => refresh(path))
                                 item.onclick = () => sessionStorage.setItem('path', path) // save last path before leaving
                                 item.appendChild(getPart)
@@ -110,7 +110,7 @@
                                 files.push(item)
                             } else {  // file
                                 item = document.createElement('a')
-                                item.href = '/get' + path + node.name
+                                item.href = path + node.name
                                 item.onclick = () => sessionStorage.setItem('path', path) // save last path before leaving
                                 files.push(item)
                                 item.innerText = node.name
