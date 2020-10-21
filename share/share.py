@@ -59,10 +59,15 @@ class handler(BaseHTTPRequestHandler):
             self.send_header('Content-Length', to_read)
             self.send_header('Content-Type', types_map.get(path.splitext(node)[1]))
             self.end_headers()
-            while to_read > DEFAULT_BUFFER_SIZE:
-                self.wfile.write(file.read(DEFAULT_BUFFER_SIZE))
-                to_read -= DEFAULT_BUFFER_SIZE
-            self.wfile.write(file.read(to_read))
+            try:
+                while to_read > DEFAULT_BUFFER_SIZE:
+                    self.wfile.write(file.read(DEFAULT_BUFFER_SIZE))
+                    to_read -= DEFAULT_BUFFER_SIZE
+                self.wfile.write(file.read(to_read))
+            except ConnectionResetError:
+                print('Connection reset')
+            except ConnectionAbortedError:
+                print('Connection aborted')
 
     def do_GET(self):
         # for files
