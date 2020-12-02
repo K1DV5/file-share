@@ -1,21 +1,21 @@
-# -{cd ../../../../../Installers | share}
-
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from os import path, listdir, remove, stat
-from io import DEFAULT_BUFFER_SIZE
 from cgi import FieldStorage
 from json import dumps
 from mimetypes import types_map
 from urllib.parse import unquote
 from socketserver import ThreadingMixIn
+from socket import gethostname, gethostbyname
+import time
 
 index = path.join(path.dirname(__file__), 'index.html')
 own_files = {}  # files here that came from the clients to grant delete access
+buffer_size = 1024 * 64  # 64KB
 
 
 class handler(BaseHTTPRequestHandler):
 
-    def send_node(self, node, hrader_only=False):
+    def send_node(self, node, header_only=False):
         if path.isdir(node):
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
@@ -33,36 +33,41 @@ class handler(BaseHTTPRequestHandler):
             self.wfile.write(dumps(to_write, ensure_ascii=False).encode())
             return
         size = stat(node).st_size
-        with open(node, 'rb') as file:
-            if 'Range' in self.headers:
-                self.send_response(206)
-                try:
-                    start, end = self.headers.get('Range').strip().split('bytes=')[1].strip().split('-')
-                except IndexError:
-                    self.send_response(416)
-                    return self.end_headers()
-                if start == '':  # last end bytes
-                    to_read = int(end)
-                    file.seek(size - to_read)
-                elif end == '':  # starting from start
-                    start = int(start)
-                    file.seek(start)
-                    to_read = size - start
-                else:
-                    start, end = int(start), int(end)
-                    if start:
-                        file.seek(start)
-                    to_read = end - start
-            else:
-                self.send_response(200)
-                to_read = size
-            self.send_header('Content-Length', to_read)
-            self.send_header('Content-Type', types_map.get(path.splitext(node)[1]))
-            self.end_headers()
+        if 'Range' in self.headers:
+            self.send_response(206)
             try:
-                while to_read > DEFAULT_BUFFER_SIZE:
-                    self.wfile.write(file.read(DEFAULT_BUFFER_SIZE))
-                    to_read -= DEFAULT_BUFFER_SIZE
+                start, end = self.headers.get('Range').strip().split('bytes=')[1].strip().split('-')
+            except IndexError:
+                self.send_response(416)
+                return self.end_headers()
+            if start == '':  # last end bytes
+                to_read = int(end)
+                start = size - to_read
+            elif end == '':  # starting from the middle
+                start = int(start)
+                to_read = size - start
+                end = size
+            else:
+                start, end = int(start), int(end) + 1
+                to_read = end - start
+        else:
+            self.send_response(200)
+            to_read = size
+            start = 0
+            end = size
+        self.send_header('Content-Length', to_read)
+        self.send_header('Content-Type', types_map.get(path.splitext(node)[1]))
+        self.end_headers()
+        if header_only:
+            return
+        with open(node, 'rb') as file:
+            if start:
+                file.seek(start)
+            try:
+                while to_read > buffer_size:
+                    time.sleep(0.02)
+                    self.wfile.write(file.read(buffer_size))
+                    to_read -= buffer_size
                 self.wfile.write(file.read(to_read))
             except ConnectionResetError:
                 print('Connection reset')
@@ -71,7 +76,7 @@ class handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         # for files
-        if self.path == '/' and self.headers.get('Sec-Fetch-Mode') == 'navigate':
+        if self.path == '/' and 'Referer' not in self.headers:
             return self.send_node(index)  # first entry
         self.path = unquote(self.path).strip('/') if self.path[1:] else '.'
         if path.exists(self.path):
@@ -132,7 +137,7 @@ class ThreadingSimpleServer(ThreadingMixIn, HTTPServer):
 
 
 def serve():
-    print('Serving...')
+    print('Serving on address ' + gethostbyname(gethostname()))
     server = ThreadingSimpleServer(('', 80), handler)
     try:
         while True:
