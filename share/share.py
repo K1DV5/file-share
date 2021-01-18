@@ -56,6 +56,7 @@ class handler(BaseHTTPRequestHandler):
             start = 0
             end = size
         self.send_header('Content-Length', to_read)
+        self.send_header('Content-Disposition', 'attachment; filename=' + path.basename(node))
         self.send_header('Content-Type', types_map.get(path.splitext(node)[1]))
         self.end_headers()
         if header_only:
