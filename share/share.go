@@ -1,3 +1,4 @@
+// -{go install}
 // -{go build && share}
 // -{go run %f}
 package main
@@ -73,6 +74,7 @@ func (handler) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 			log.Print(http.StatusNotFound, err)
 			return
 		}
+        defer f.Close()
 		s, err := f.Stat()
 		if err != nil {
 			res.WriteHeader(http.StatusExpectationFailed)
