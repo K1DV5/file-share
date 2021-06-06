@@ -97,6 +97,7 @@
                             } else {  // file
                                 item = document.createElement('a')
                                 item.href = path + node.name
+                                item.download = node.name
                                 item.onclick = () => sessionStorage.setItem('path', path) // save last path before leaving
                                 let [name, size] = [document.createElement('span'), document.createElement('span')]
                                 name.innerText = node.name
