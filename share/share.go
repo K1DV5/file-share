@@ -1,5 +1,5 @@
-// -{go install}
 // -{go build && share}
+// -{go install}
 // -{go run %f}
 package main
 
@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+    "time"
 )
 
 //go:embed index.html
@@ -23,7 +24,7 @@ const (
 	KB = 1024
 	MB = KB * KB
 	GB = MB * KB
-	// bufSize = 64 * KB
+	bufSize = 64 * KB
 )
 
 func ReadableSize(length int64) string {
@@ -133,27 +134,72 @@ func (handler) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 				return
 			}
 			defer r.Close()
-			io.Copy(w, r)
-			// var written int64 = 0
-			// for file.Size - written > bufSize {
-			//     wrote, err := io.CopyN(w, r, bufSize)
-			//     if err != nil && err != io.EOF {
-			//         res.WriteHeader(http.StatusExpectationFailed)
-			//         log.Print(http.StatusExpectationFailed, err)
-			//         return
-			//     }
-			//     written += wrote
-			//     // res.Write([]byte(fmt.Sprint(written * 100 / file.Size)))
-			//     fmt.Println(written * 100 / file.Size)
-			// }
-			// _, err = io.CopyN(w, r, bufSize - (file.Size - written))
-			// if err != nil && err != io.EOF {
-			//     res.WriteHeader(http.StatusExpectationFailed)
-			//     log.Print(http.StatusExpectationFailed, err)
-			//     return
-			// }
+			// io.Copy(w, r)
+            finished := make(chan struct{})
+            var written int64
+            go func() {
+                for file.Size - written > bufSize {
+                    wrote, err := io.CopyN(w, r, bufSize)
+                    if err != nil && err != io.EOF {
+                        res.WriteHeader(http.StatusExpectationFailed)
+                        log.Print(http.StatusExpectationFailed, err)
+                        return
+                    }
+                    written += wrote
+                    // fmt.Println(written * 100 / file.Size)
+                }
+                _, err = io.CopyN(w, r, bufSize - (file.Size - written))
+                if err != nil && err != io.EOF {
+                    res.WriteHeader(http.StatusExpectationFailed)
+                    log.Print(http.StatusExpectationFailed, err)
+                    return
+                }
+                finished <- struct{}{}
+            }()
+            timer := time.NewTimer(time.Second)
+            select {
+            case <-finished:
+                timer.Stop()
+            case <-timer.C:
+                fmt.Println(fmt.Sprint("", written * 100 / file.Size))
+                res.Write([]byte(fmt.Sprint("", written * 100 / file.Size)))
+                timer.Reset(time.Second)
+            }
 		}
 	}
+}
+
+func showIP() {
+    interfaces, _ := net.Interfaces()
+    workingInterfaces := make([]net.Interface, 0)
+    fmt.Println("Serving on:\n  localhost (Loop back)")
+    for _, i := range interfaces {
+        if i.Flags & net.FlagUp != 0 && i.Flags & net.FlagLoopback == 0 {
+            workingInterfaces = append(workingInterfaces, i)
+        }
+    }
+    if len(workingInterfaces) == 0 {
+        return
+    }
+    for _, i := range workingInterfaces {
+        addrs, err := i.Addrs()
+        fmt.Print("  ")
+        if err != nil {
+            log.Fatal("Network error")
+            return
+        }
+        for _, a := range addrs {
+            var ip net.IP
+            switch v := a.(type) {
+            case *net.IPNet:
+                ip = v.IP
+            case *net.IPAddr:
+                ip = v.IP
+            }
+            fmt.Print(ip, "  ")
+        }
+        fmt.Println("(" + i.Name + ")")
+    }
 }
 
 func main() {
@@ -176,13 +222,7 @@ func main() {
 		}
 		close(idleConnsClosed)
 	}()
-    // show IP address
-    conn, err := net.Dial("udp", "8.8.8.8:80")
-    if err != nil {
-        log.Fatal(err)
-    }
-    fmt.Println("Serving on", conn.LocalAddr().(*net.UDPAddr).IP)  // without port, using 80
-    conn.Close()
+    showIP()
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
 		// Error starting or closing listener:
 		log.Fatalf("HTTP server ListenAndServe: %v", err)
