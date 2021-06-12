@@ -59,17 +59,11 @@
                 if (!fileInput.files.length) return
                 let formData = new FormData(form)
                 formData.append('folder', title.innerText)
-                // progress(50)
+                progress(99)
                 fetch('/', {method: 'post', body: formData}).then(async res => {
                     if (res.status !== 200) return alert(res.statusText)
                     fileInput.value = ''
-                    const reader = res.body.getReader()
-                    let decoder = new TextDecoder('utf-8')
-                    while (true) {
-                        const {done, value} = await reader.read()
-                        if (done) break
-                        progress(Number(decoder.decode(value).trim()))
-                    }
+                    progress(100)
                     refresh(title.innerText)
                 })
             }

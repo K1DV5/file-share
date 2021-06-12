@@ -14,16 +14,16 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-    "time"
+    "path/filepath"
 )
 
 //go:embed index.html
 var index []byte
 
 const (
-	KB = 1024
-	MB = KB * KB
-	GB = MB * KB
+	KB      = 1024
+	MB      = KB * KB
+	GB      = MB * KB
 	bufSize = 64 * KB
 )
 
@@ -46,10 +46,25 @@ func ReadableSize(length int64) string {
 	return fmt.Sprintf("%.2f%s", value, unit)
 }
 
+func getFilename(name string) string {
+    // add number if another file with same name exists
+    if _, err := os.Stat(name); os.IsNotExist(err) {
+        return name
+    }
+    ext := filepath.Ext(name)
+    base := string(name[:len(name)-len(ext)])
+    for i := 1; ; i++ {
+        newName := fmt.Sprintf("%s (%d)%s", base, i, ext)
+        if _, err := os.Stat(newName); os.IsNotExist(err) {
+            return newName
+        }
+    }
+}
+
 type DirEntry struct {
 	Name  string `json:"name"`
 	IsDir bool   `json:"isdir"`
-	Size  string  `json:"size"`
+	Size  string `json:"size"`
 }
 
 type handler struct{}
@@ -62,7 +77,6 @@ func (handler) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 	if req.Method == "GET" || req.Method == "HEAD" {
 		// log.info(req.Method, path)
 		if req.URL.Path == "/" && req.Header.Get("Referer") == "" {
-			res.WriteHeader(http.StatusOK)
 			res.Write(index)
 			return
 		}
@@ -75,7 +89,7 @@ func (handler) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 			log.Print(http.StatusNotFound, err)
 			return
 		}
-        defer f.Close()
+		defer f.Close()
 		s, err := f.Stat()
 		if err != nil {
 			res.WriteHeader(http.StatusExpectationFailed)
@@ -110,17 +124,14 @@ func (handler) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 				log.Print(http.StatusExpectationFailed, err)
 				return
 			}
-			res.WriteHeader(http.StatusOK)
 			res.Write(jsonData)
 		} else {
 			http.ServeContent(res, req, path, s.ModTime(), f)
 		}
 	} else if req.Method == "POST" {
 		req.ParseMultipartForm(24 * 1024 * 1024 * 1024)
-		// fmt.Println(req.MultipartForm.Value["folder"][0], req.MultipartForm.File["file"])
-		res.WriteHeader(http.StatusOK)
 		for _, file := range req.MultipartForm.File["file"] {
-			w, err := os.Create(path + "/" + file.Filename)
+			w, err := os.Create(getFilename(filepath.Join(path, file.Filename)))
 			if err != nil {
 				res.WriteHeader(http.StatusExpectationFailed)
 				log.Print(http.StatusExpectationFailed, err)
@@ -134,72 +145,43 @@ func (handler) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 				return
 			}
 			defer r.Close()
-			// io.Copy(w, r)
-            finished := make(chan struct{})
-            var written int64
-            go func() {
-                for file.Size - written > bufSize {
-                    wrote, err := io.CopyN(w, r, bufSize)
-                    if err != nil && err != io.EOF {
-                        res.WriteHeader(http.StatusExpectationFailed)
-                        log.Print(http.StatusExpectationFailed, err)
-                        return
-                    }
-                    written += wrote
-                    // fmt.Println(written * 100 / file.Size)
-                }
-                _, err = io.CopyN(w, r, bufSize - (file.Size - written))
-                if err != nil && err != io.EOF {
-                    res.WriteHeader(http.StatusExpectationFailed)
-                    log.Print(http.StatusExpectationFailed, err)
-                    return
-                }
-                finished <- struct{}{}
-            }()
-            timer := time.NewTimer(time.Second)
-            select {
-            case <-finished:
-                timer.Stop()
-            case <-timer.C:
-                fmt.Println(fmt.Sprint("", written * 100 / file.Size))
-                res.Write([]byte(fmt.Sprint("", written * 100 / file.Size)))
-                timer.Reset(time.Second)
-            }
+			io.Copy(w, r)
 		}
+        res.WriteHeader(http.StatusOK)
 	}
 }
 
 func showIP() {
-    interfaces, _ := net.Interfaces()
-    workingInterfaces := make([]net.Interface, 0)
-    fmt.Println("Serving on:\n  localhost (Loop back)")
-    for _, i := range interfaces {
-        if i.Flags & net.FlagUp != 0 && i.Flags & net.FlagLoopback == 0 {
-            workingInterfaces = append(workingInterfaces, i)
-        }
-    }
-    if len(workingInterfaces) == 0 {
-        return
-    }
-    for _, i := range workingInterfaces {
-        addrs, err := i.Addrs()
-        fmt.Print("  ")
-        if err != nil {
-            log.Fatal("Network error")
-            return
-        }
-        for _, a := range addrs {
-            var ip net.IP
-            switch v := a.(type) {
-            case *net.IPNet:
-                ip = v.IP
-            case *net.IPAddr:
-                ip = v.IP
-            }
-            fmt.Print(ip, "  ")
-        }
-        fmt.Println("(" + i.Name + ")")
-    }
+	interfaces, _ := net.Interfaces()
+	workingInterfaces := make([]net.Interface, 0)
+	fmt.Println("Serving on:\n  localhost (Loop back)")
+	for _, i := range interfaces {
+		if i.Flags&net.FlagUp != 0 && i.Flags&net.FlagLoopback == 0 {
+			workingInterfaces = append(workingInterfaces, i)
+		}
+	}
+	if len(workingInterfaces) == 0 {
+		return
+	}
+	for _, i := range workingInterfaces {
+		addrs, err := i.Addrs()
+		fmt.Print("  ")
+		if err != nil {
+			log.Fatal("Network error")
+			return
+		}
+		for _, a := range addrs {
+			var ip net.IP
+			switch v := a.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+			fmt.Print(ip, "  ")
+		}
+		fmt.Println("(" + i.Name + ")")
+	}
 }
 
 func main() {
@@ -222,7 +204,7 @@ func main() {
 		}
 		close(idleConnsClosed)
 	}()
-    showIP()
+	showIP()
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
 		// Error starting or closing listener:
 		log.Fatalf("HTTP server ListenAndServe: %v", err)
