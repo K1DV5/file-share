@@ -1,6 +1,6 @@
-// -{go build && share}
-// -{go install}
-// -{go run %f}
+// $ go build && ./share
+// $ go install
+// $ go run %f
 package main
 
 import (
@@ -151,7 +151,7 @@ func (handler) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func showIP() {
+func showIP(port string) {
 	interfaces, _ := net.Interfaces()
 	workingInterfaces := make([]net.Interface, 0)
 	fmt.Println("Serving on:\n  localhost (Loop back)")
@@ -171,22 +171,24 @@ func showIP() {
 			return
 		}
 		for _, a := range addrs {
-			var ip net.IP
+			var ip string
 			switch v := a.(type) {
 			case *net.IPNet:
-				ip = v.IP
+				ip = v.IP.String()
 			case *net.IPAddr:
-				ip = v.IP
+				ip = "[" + v.IP.String() + "]"
 			}
-			fmt.Print(ip, "  ")
+			fmt.Print(ip, ":", port, "  ")
 		}
 		fmt.Println("(" + i.Name + ")")
 	}
 }
 
 func main() {
+	port := "5999"
 	var srv http.Server = http.Server{
 		Handler: handler{},
+		Addr: "0.0.0.0:" + port,
 	}
 
 	idleConnsClosed := make(chan struct{})
@@ -204,7 +206,7 @@ func main() {
 		}
 		close(idleConnsClosed)
 	}()
-	showIP()
+	showIP(port)
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
 		// Error starting or closing listener:
 		log.Fatalf("HTTP server ListenAndServe: %v", err)

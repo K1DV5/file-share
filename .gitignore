@@ -1,2 +1,3 @@
-share/share.exe
-share/go.sum
+./share
+./share.exe
+rnd
