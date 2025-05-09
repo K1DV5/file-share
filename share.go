@@ -174,11 +174,13 @@ func showIP(port string) {
 			var ip string
 			switch v := a.(type) {
 			case *net.IPNet:
-				ip = v.IP.String()
-			case *net.IPAddr:
-				ip = "[" + v.IP.String() + "]"
+				if v.IP.To4() == nil {
+					ip = "[" + v.IP.String() + "]"
+				} else {
+					ip = v.IP.String()
+				}
 			}
-			fmt.Print(ip, ":", port, "  ")
+			fmt.Print("http://", ip, ":", port, "  ")
 		}
 		fmt.Println("(" + i.Name + ")")
 	}
