@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta http-equiv="X-UA-Compatible" content="ie=edge">
+        <title>File Share</title>
+        <style>
+			html, body {padding: 0; margin: 0}
+            html {font-family: sans-serif; font-size: 90%}
+            .dirbody {max-width: 10cm; margin-left: auto; margin-right: auto}
+            #file {background: transparent; border: solid grey; display: none}
+            form {display: inline}
+            button, label[for=file] {border: solid grey; padding: .5em; width: fit-content; cursor: pointer; background: transparent}
+			.item:first-child {margin-top: 2em; border-top: solid lightgrey 1px}
+            .item {display: flex; align-items: center; border-bottom: solid lightgrey 1px}
+			.item > * {display: block}
+			.open {flex-grow: 1}
+            .open, .download {padding: .5em; text-decoration: none; color: black}
+			.item span {color: grey}
+			img {max-width: 100vw}
+        </style>
+    </head>
+
+	{{if .IsImage}}
+		<body>
+			<div>
+				<a href="./">..</a>
+			</div>
+			{{if ne .Prev ""}}
+				<a href="{{.Prev}}?view=1">Prev</a>
+			{{end}}
+			{{if eq .Next ""}}
+				<img src="{{.Name}}" >
+			{{else}}
+				<a href="{{.Next}}?view=1"><img src="{{.Name}}" ></a>
+			{{end}}
+		</body>
+	{{else}}
+		<body class="dirbody">
+			<h3 id="title">{{.Path}}</h3>
+			<form action="." method="POST" enctype="multipart/form-data">
+				<label for="file" id="upload">Upload</label>
+				<input id="file" name="file" type="file" multiple>
+				<button id="submit">Submit</button>
+			</form>
+			<div id="list">
+				{{if ne .Path "."}}
+				<div class="item">
+					<a class="open" href="..">..</a>
+				</div>
+				{{end}}
+				{{range .Entries }}
+					<div class="item">
+					<a class="open" href="{{.Name}}{{if .IsDir}}/{{else if .IsImage}}?view=1{{end}}"> {{ .Name }} </a> 
+						{{if .IsDir }}
+						{{else}}
+							<span>{{.Size}}</span>
+							<a class="download" href="{{.Name}}" download="{{.Name}}">D</a>
+						{{end}}
+					</div>
+				{{end}}
+			</div>
+			<script>
+				document.getElementById('submit').remove() // not needed if js is run
+				let form = document.getElementsByTagName('form')[0]
+				let fileInput = document.getElementById('file')
+				fileInput.addEventListener('change', _ => form.submit())
+			</script>
+		</body>
+	{{end}}
+</html>

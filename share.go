@@ -6,19 +6,19 @@ package main
 import (
 	"context"
 	_ "embed"
-	"encoding/json"
 	"fmt" // Println
+	"html/template"
 	"io"
 	"log"
+	"math/rand"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
-    "path/filepath"
+	"path/filepath"
+	"strconv"
+	"strings"
 )
-
-//go:embed index.html
-var index []byte
 
 const (
 	KB      = 1024
@@ -26,6 +26,11 @@ const (
 	GB      = MB * KB
 	bufSize = 64 * KB
 )
+
+//go:embed nodes.gotmpl
+var templ []byte
+
+var imageExts = []string{"jpg", "jpeg", "png", "jfif"}
 
 func ReadableSize(length int64) string {
 	var value = float64(length)
@@ -64,71 +69,81 @@ func getFilename(name string) string {
 type DirEntry struct {
 	Name  string `json:"name"`
 	IsDir bool   `json:"isdir"`
+	IsImage bool `json:"isimage"`
 	Size  string `json:"size"`
 }
 
-type handler struct{}
+type ResData struct {
+	Name string
+	Path string
+	IsImage bool
+	Prev string
+	Next string
+	Entries []DirEntry
+}
 
-func (handler) ServeHTTP(res http.ResponseWriter, req *http.Request) {
-	path := req.URL.Path[1:]
+func checkImage(name string) bool {
+	for _, ext := range imageExts {
+		if strings.HasSuffix(name, "." + ext) {
+			return true
+		}
+	}
+	return false
+}
+
+func splitTail(path string) (string, string) {
+	iName := strings.LastIndex(path, "/")
+	if iName == -1 {
+		return "", path
+	}
+	return path[:iName], path[iName+1:]
+}
+
+type Handler struct{
+	templ *template.Template
+	basePathMask string
+	basePath string
+}
+
+func (self *Handler) Init() {
+	if len(os.Args) > 1 {
+		self.basePath = os.Args[1]
+		self.basePathMask = "/" + strconv.Itoa(rand.Int()) // more secure
+	}
+	tmpl, err := template.New("Index").Parse(string(templ))
+	if err != nil {
+		panic(err)
+	}
+	self.templ = tmpl
+}
+
+func (self *Handler) ServeT(res io.Writer, data any) {
+	err := self.templ.Execute(res, data)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func (self *Handler) ServeHTTP(res http.ResponseWriter, req *http.Request) {
+	path := req.URL.Path
+	if !strings.HasPrefix(path, self.basePathMask) {
+		res.WriteHeader(http.StatusNotFound)
+		log.Print(http.StatusNotFound, "Failed base path check: " + path)
+		return
+	}
+	path = path[len(self.basePathMask):]
+	path = strings.Trim(path, "/")
+	showPath := path
+	if showPath == "" {
+		showPath = "."
+	}
+	if self.basePath != "" {
+		path = self.basePath + "/" + path
+	}
 	if path == "" {
 		path = "."
 	}
-	if req.Method == "GET" || req.Method == "HEAD" {
-		// log.info(req.Method, path)
-		if req.URL.Path == "/" && req.Header.Get("Referer") == "" {
-			res.Write(index)
-			return
-		}
-		if path == "" {
-			path = "."
-		}
-		f, err := os.Open(path)
-		if err != nil {
-			res.WriteHeader(http.StatusNotFound)
-			log.Print(http.StatusNotFound, err)
-			return
-		}
-		defer f.Close()
-		s, err := f.Stat()
-		if err != nil {
-			res.WriteHeader(http.StatusExpectationFailed)
-			log.Print(http.StatusExpectationFailed, err)
-			return
-		}
-		if s.IsDir() {
-			entries, err := f.ReadDir(0)
-			if err != nil {
-				res.WriteHeader(http.StatusExpectationFailed)
-				log.Print(http.StatusExpectationFailed, err)
-				return
-			}
-			jentries := make([]DirEntry, 0)
-			for _, entry := range entries {
-				jentry := DirEntry{entry.Name(), entry.IsDir(), ""}
-				if !entry.IsDir() {
-					// file
-					info, err := entry.Info()
-					if err != nil {
-						res.WriteHeader(http.StatusExpectationFailed)
-						log.Print(http.StatusExpectationFailed, err)
-						return
-					}
-					jentry.Size = ReadableSize(info.Size())
-				}
-				jentries = append(jentries, jentry)
-			}
-			jsonData, err := json.Marshal(jentries)
-			if err != nil {
-				res.WriteHeader(http.StatusExpectationFailed)
-				log.Print(http.StatusExpectationFailed, err)
-				return
-			}
-			res.Write(jsonData)
-		} else {
-			http.ServeContent(res, req, path, s.ModTime(), f)
-		}
-	} else if req.Method == "POST" {
+	if req.Method == "POST" {
 		req.ParseMultipartForm(24 * 1024 * 1024 * 1024)
 		for _, file := range req.MultipartForm.File["file"] {
 			w, err := os.Create(getFilename(filepath.Join(path, file.Filename)))
@@ -147,11 +162,97 @@ func (handler) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 			defer r.Close()
 			io.Copy(w, r)
 		}
-        res.WriteHeader(http.StatusOK)
+		http.Redirect(res, req, self.basePathMask + "/" + path, http.StatusSeeOther)
+		return
 	}
+	parent, name := splitTail(path)
+	viewImage := checkImage(path) && req.URL.Query().Get("view") != ""
+	openPath := path
+	if viewImage {
+		openPath = parent
+	}
+	f, err := os.Open(openPath)
+	if err != nil {
+		res.WriteHeader(http.StatusNotFound)
+		log.Print(http.StatusNotFound, err)
+		return
+	}
+	defer f.Close()
+	s, err := f.Stat()
+	if err != nil {
+		res.WriteHeader(http.StatusExpectationFailed)
+		log.Print(http.StatusExpectationFailed, err)
+		return
+	}
+	data := ResData{
+		Name: name,
+		Path: showPath,
+		IsImage: viewImage,
+	}
+	if viewImage {
+		// view image
+		// get neighbors
+		entries, err := f.ReadDir(0)
+		if err != nil {
+			res.WriteHeader(http.StatusExpectationFailed)
+			log.Print(http.StatusExpectationFailed, err)
+			return
+		}
+		iImg := -1
+		for i, entry := range entries {
+			if !checkImage(entry.Name()) {
+				continue
+			}
+			if entry.Name() == name {
+				iImg = i
+				continue
+			}
+			if iImg == -1 {
+				data.Prev = entry.Name()
+			} else {
+				data.Next = entry.Name()
+				break
+			}
+		}
+		if iImg == -1 {
+			res.WriteHeader(http.StatusExpectationFailed)
+			log.Print(http.StatusExpectationFailed, "Image not found")
+			return
+		}
+		self.ServeT(res, data)
+		return
+	}
+	if !s.IsDir() {
+		// simple serve file
+		http.ServeContent(res, req, path, s.ModTime(), f)
+		return
+	}
+	// dir list
+	entries, err := f.ReadDir(0)
+	if err != nil {
+		res.WriteHeader(http.StatusExpectationFailed)
+		log.Print(http.StatusExpectationFailed, err)
+		return
+	}
+	for _, entry := range entries {
+		lentry := DirEntry{Name: entry.Name(), IsDir: entry.IsDir(), IsImage: checkImage(entry.Name())}
+		if !entry.IsDir() {
+			// file
+			info, err := entry.Info()
+			if err != nil {
+				res.WriteHeader(http.StatusExpectationFailed)
+				log.Print(http.StatusExpectationFailed, err)
+				return
+			}
+			lentry.Size = ReadableSize(info.Size())
+		}
+		data.Entries = append(data.Entries, lentry)
+	}
+	self.ServeT(res, data)
+	return
 }
 
-func showIP(port string) {
+func showIP(port string, basePath string) {
 	interfaces, _ := net.Interfaces()
 	workingInterfaces := make([]net.Interface, 0)
 	fmt.Println("Serving on:\n  localhost (Loop back)")
@@ -180,7 +281,7 @@ func showIP(port string) {
 					ip = v.IP.String()
 				}
 			}
-			fmt.Print("http://", ip, ":", port, "  ")
+			fmt.Printf("http://%s:%s%s/ ", ip, port, basePath)
 		}
 		fmt.Println("(" + i.Name + ")")
 	}
@@ -188,8 +289,10 @@ func showIP(port string) {
 
 func main() {
 	port := "5999"
+	handler := Handler{}
+	handler.Init()
 	var srv http.Server = http.Server{
-		Handler: handler{},
+		Handler: &handler,
 		Addr: "0.0.0.0:" + port,
 	}
 
@@ -208,7 +311,7 @@ func main() {
 		}
 		close(idleConnsClosed)
 	}()
-	showIP(port)
+	showIP(port, handler.basePathMask)
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
 		// Error starting or closing listener:
 		log.Fatalf("HTTP server ListenAndServe: %v", err)
