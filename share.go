@@ -169,7 +169,11 @@ func (self *Handler) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 	viewImage := checkImage(path) && req.URL.Query().Get("view") != ""
 	openPath := path
 	if viewImage {
-		openPath = parent
+		if parent == "" {
+			openPath = "."
+		} else {
+			openPath = parent
+		}
 	}
 	f, err := os.Open(openPath)
 	if err != nil {
@@ -249,7 +253,6 @@ func (self *Handler) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 		data.Entries = append(data.Entries, lentry)
 	}
 	self.ServeT(res, data)
-	return
 }
 
 func showIP(port string, basePath string) {
